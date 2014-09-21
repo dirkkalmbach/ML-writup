@@ -1,0 +1,120 @@
+---
+title: "ML Project"
+output: html_document
+---
+__Summary:__
+
+* _Model: Random Forest from library `randomForest`_
+
+* _Expected out of sample error: 0.008_
+
+* _Number of correct predicted observations: 19/20_
+
+
+## Loading data
+First, we start with loading basic libraries and the datasets:
+
+```{r, cache=TRUE}
+library(caret); library(kernlab); library(ggplot2)
+
+# Training-Data
+fileURL_train <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+download.file(fileURL_train, destfile="./train.csv",method="curl")
+train<-read.csv("train.csv")
+
+# Testing-Data
+fileURL_test <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(fileURL_test, destfile="./test.csv",method="curl")
+testset<-read.csv("test.csv")
+
+dim(train)
+```
+
+## Data Splitting
+We continue with building the training and test set. (I decided to split training and test set 50:50 to reduce the calculation time for the tree-model.):
+
+```{r,warning=FALSE, message=FALSE, cache=FALSE}
+set.seed(1974)
+library(caret)
+inTrain <- createDataPartition(y=train$classe,p=0.5, list=FALSE)
+training <- train[inTrain,]; testing <- train[-inTrain, ]
+```
+
+## Preprocessing
+The Datasets consists of 160 variables. First of all, we should get rid of all variables with too many na's in the `training` dataset:
+
+```{r}
+for(i in ncol(training):1){
+    if (sum(is.na(training[i]))/length(training[,i])>0.9) {training[i]<-NULL}
+}
+```
+
+Now we have 93 variables left.
+
+The first 7 variables obviously seems to have no predictive value. So we get rid of them, too:
+```{r}
+training <- training[,-(1:7)]
+```
+
+A quick look at the structure of the dataset (`str(training)`) shows that some variables are of type factor. So we convert all variables but `training$classe` to numeric types:
+
+```{r}
+for (i in ncol(training)-1:1){training[,i]<-as.numeric(training[,i])}
+```
+
+The dataset still contains of a lot of variables which doesn't help to build a predictive algorithm. Clearly speaking, let's get rid of all variables with near zero variation:
+
+```{r,cache=FALSE}
+nzv <- nearZeroVar(training[,-ncol(training)-1],saveMetrics = TRUE)
+    subtrain <- training[,!as.logical(nzv$nzv)]
+```
+
+## Some Plotting
+A deeper look at the variables showed that 4 predictors, namely
+
+- `roll_belt+yaw_belt`
+- `pitch_belt`, and
+- `magnet_belt_z`
+
+seems to have the strongest predictive influence. Let's plot these variables:
+```{r, cache=FALSE, fig.height=4}
+qplot(roll_belt,yaw_belt, color=classe, data=subtrain)
+qplot(pitch_belt, magnet_belt_z, color=classe, data=subtrain)
+```
+
+## Prediction algorithm (too slow)
+Let's continue with training.
+I chose the __random forest__ alghorithm as this - as mentioned in the lecture - is _"... usually one of the two top performing algorithms along with boosting in prediction contests"._ ^(see Lecture)^
+
+At first, I used the alghorithm from the `caret`-package. The results were quite good and I actually succeeded in predicting all 20 test-observations. Anyway, the drawback of this algorithm was that it took overnight to calculate.  
+
+Accidentally, I deleted all variables in the workspace. And I finished this document on the last day prior to the submission deadline. So, I needed to switch to the `randomForest()`-function from the `randomForest`-library. (And it appeared to be that this function is much faster but a little bit less accurate.). 
+
+Anyway, here are the results:
+
+```{r, cache=FALSE,warning=FALSE,message=FALSE}
+library(randomForest)
+fit.rf2 = randomForest(classe ~ ., data=subtrain)
+fit.rf2
+```
+
+We can see, that the error rate is __1.04%__.
+
+## Cross Validation
+We now use the test-set to check the model:
+
+```{r, cache=FALSE}
+prediction <- predict(fit.rf2,testing)
+CM <- confusionMatrix(testing$classe, prediction)
+CM
+```
+The estimated out of sample error is: 1-Accuracy, e.g.: __0.008__.
+
+## Prediction for Write-up Assignment
+```{r}
+fileURL_test <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(fileURL_test, destfile="./test.csv",method="curl")
+testset<-read.csv("test.csv")
+predict(fit.rf2,testset)
+```
+Out of the 20 oberservations 19 were correctly predicted, e.g.: __95% accuracy__!
